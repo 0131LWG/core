@@ -1,33 +1,32 @@
 import {
-  type Component,
-  type ComponentInternalInstance,
-  type ConcreteComponent,
-  type Data,
-  getExposeProxy,
+  ConcreteComponent,
+  Data,
   validateComponentName,
+  Component,
+  ComponentInternalInstance,
+  getExposeProxy
 } from './component'
-import type {
+import {
   ComponentOptions,
   MergedComponentOptions,
-  RuntimeCompilerOptions,
+  RuntimeCompilerOptions
 } from './componentOptions'
-import type {
+import {
   ComponentCustomProperties,
-  ComponentPublicInstance,
+  ComponentPublicInstance
 } from './componentPublicInstance'
-import { type Directive, validateDirectiveName } from './directives'
-import type { ElementNamespace, RootRenderFunction } from './renderer'
-import type { InjectionKey } from './apiInject'
+import { Directive, validateDirectiveName } from './directives'
+import { RootRenderFunction } from './renderer'
+import { InjectionKey } from './apiInject'
 import { warn } from './warning'
-import { type VNode, cloneVNode, createVNode } from './vnode'
-import type { RootHydrateFunction } from './hydration'
+import { createVNode, cloneVNode, VNode } from './vnode'
+import { RootHydrateFunction } from './hydration'
 import { devtoolsInitApp, devtoolsUnmountApp } from './devtools'
-import { NO, extend, isFunction, isObject } from '@vue/shared'
+import { isFunction, NO, isObject, extend } from '@vue/shared'
 import { version } from '.'
 import { installAppCompatProperties } from './compat/global'
-import type { NormalizedPropsOptions } from './componentProps'
-import type { ObjectEmitsOptions } from './componentEmits'
-import type { DefineComponent } from './apiDefineComponent'
+import { NormalizedPropsOptions } from './componentProps'
+import { ObjectEmitsOptions } from './componentEmits'
 
 export interface App<HostElement = any> {
   version: string
@@ -41,13 +40,13 @@ export interface App<HostElement = any> {
 
   mixin(mixin: ComponentOptions): this
   component(name: string): Component | undefined
-  component(name: string, component: Component | DefineComponent): this
-  directive<T = any, V = any>(name: string): Directive<T, V> | undefined
-  directive<T = any, V = any>(name: string, directive: Directive<T, V>): this
+  component(name: string, component: Component): this
+  directive(name: string): Directive | undefined
+  directive(name: string, directive: Directive): this
   mount(
     rootContainer: HostElement | string,
     isHydrate?: boolean,
-    namespace?: boolean | ElementNamespace,
+    isSVG?: boolean
   ): ComponentPublicInstance
   unmount(): void
   provide<T>(key: InjectionKey<T> | string, value: T): this
@@ -84,7 +83,7 @@ export type OptionMergeFunction = (to: unknown, from: unknown) => any
 
 export interface AppConfig {
   // @private
-  readonly isNativeTag: (tag: string) => boolean
+  readonly isNativeTag?: (tag: string) => boolean
 
   performance: boolean
   optionMergeStrategies: Record<string, OptionMergeFunction>
@@ -92,12 +91,12 @@ export interface AppConfig {
   errorHandler?: (
     err: unknown,
     instance: ComponentPublicInstance | null,
-    info: string,
+    info: string
   ) => void
   warnHandler?: (
     msg: string,
     instance: ComponentPublicInstance | null,
-    trace: string,
+    trace: string
   ) => void
 
   /**
@@ -111,11 +110,12 @@ export interface AppConfig {
    */
   isCustomElement?: (tag: string) => boolean
 
+  // TODO remove in 3.4
   /**
-   * TODO document for 3.5
-   * Enable warnings for computed getters that recursively trigger itself.
+   * Temporary config for opt-in to unwrap injected refs.
+   * @deprecated this no longer has effect. 3.3 always unwraps injected refs.
    */
-  warnRecursiveComputed?: boolean
+  unwrapInjectedRef?: boolean
 }
 
 export interface AppContext {
@@ -155,19 +155,17 @@ export interface AppContext {
   filters?: Record<string, Function>
 }
 
-type PluginInstallFunction<Options = any[]> = Options extends unknown[]
+type PluginInstallFunction<Options> = Options extends unknown[]
   ? (app: App, ...options: Options) => any
   : (app: App, options: Options) => any
 
-export type ObjectPlugin<Options = any[]> = {
-  install: PluginInstallFunction<Options>
-}
-export type FunctionPlugin<Options = any[]> = PluginInstallFunction<Options> &
-  Partial<ObjectPlugin<Options>>
-
 export type Plugin<Options = any[]> =
-  | FunctionPlugin<Options>
-  | ObjectPlugin<Options>
+  | (PluginInstallFunction<Options> & {
+      install?: PluginInstallFunction<Options>
+    })
+  | {
+      install: PluginInstallFunction<Options>
+    }
 
 export function createAppContext(): AppContext {
   return {
@@ -179,7 +177,7 @@ export function createAppContext(): AppContext {
       optionMergeStrategies: {},
       errorHandler: undefined,
       warnHandler: undefined,
-      compilerOptions: {},
+      compilerOptions: {}
     },
     mixins: [],
     components: {},
@@ -187,23 +185,28 @@ export function createAppContext(): AppContext {
     provides: Object.create(null),
     optionsCache: new WeakMap(),
     propsCache: new WeakMap(),
-    emitsCache: new WeakMap(),
+    emitsCache: new WeakMap()
   }
 }
 
 export type CreateAppFunction<HostElement> = (
   rootComponent: Component,
-  rootProps?: Data | null,
+  rootProps?: Data | null
 ) => App<HostElement>
 
 let uid = 0
 
 export function createAppAPI<HostElement>(
   render: RootRenderFunction<HostElement>,
-  hydrate?: RootHydrateFunction,
+  hydrate?: RootHydrateFunction
 ): CreateAppFunction<HostElement> {
   return function createApp(rootComponent, rootProps = null) {
+    console.log(
+      '🚀 ~ createApp ~ isFunction(rootComponent):',
+      isFunction(rootComponent)
+    )
     if (!isFunction(rootComponent)) {
+      // 进行拷贝，避免修改根组件导致原对象改变
       rootComponent = extend({}, rootComponent)
     }
 
@@ -213,7 +216,23 @@ export function createAppAPI<HostElement>(
     }
 
     const context = createAppContext()
-    const installedPlugins = new WeakSet()
+
+    // TODO remove in 3.4
+    if (__DEV__) {
+      Object.defineProperty(context.config, 'unwrapInjectedRef', {
+        get() {
+          return true
+        },
+        set() {
+          warn(
+            `app.config.unwrapInjectedRef has been deprecated. ` +
+              `3.3 now always unwraps injected refs in Options API.`
+          )
+        }
+      })
+    }
+
+    const installedPlugins = new Set()
 
     let isMounted = false
 
@@ -234,37 +253,44 @@ export function createAppAPI<HostElement>(
       set config(v) {
         if (__DEV__) {
           warn(
-            `app.config cannot be replaced. Modify individual options instead.`,
+            `app.config cannot be replaced. Modify individual options instead.`
           )
         }
       },
 
+      // app.use()
       use(plugin: Plugin, ...options: any[]) {
         if (installedPlugins.has(plugin)) {
+          // 判断是否已经安装过该插件
           __DEV__ && warn(`Plugin has already been applied to target app.`)
         } else if (plugin && isFunction(plugin.install)) {
+          // 添加插件
           installedPlugins.add(plugin)
+          // 其实就是一个调用插件对象中的 install 方法将app 示例传递出去的过程
           plugin.install(app, ...options)
         } else if (isFunction(plugin)) {
           installedPlugins.add(plugin)
+          // 函数也可以注册为一个插件
           plugin(app, ...options)
         } else if (__DEV__) {
           warn(
             `A plugin must either be a function or an object with an "install" ` +
-              `function.`,
+              `function.`
           )
         }
         return app
       },
 
+      // 全局 mixin
       mixin(mixin: ComponentOptions) {
+        // 判断是否为options api模式
         if (__FEATURE_OPTIONS_API__) {
           if (!context.mixins.includes(mixin)) {
             context.mixins.push(mixin)
           } else if (__DEV__) {
             warn(
               'Mixin has already been applied to target app' +
-                (mixin.name ? `: ${mixin.name}` : ''),
+                (mixin.name ? `: ${mixin.name}` : '')
             )
           }
         } else if (__DEV__) {
@@ -273,99 +299,110 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 全局注册组件
       component(name: string, component?: Component): any {
         if (__DEV__) {
+          // 判断组件名称，使其不使用内置或保留的 HTML 元素作为组件
           validateComponentName(name, context.config)
         }
         if (!component) {
+          // 没有传递组件的话就将该组件从全局组件中获取返回
           return context.components[name]
         }
+        // 判断是否存在
         if (__DEV__ && context.components[name]) {
           warn(`Component "${name}" has already been registered in target app.`)
         }
+        // 注册
         context.components[name] = component
         return app
       },
 
+      // 注册自定义指令
       directive(name: string, directive?: Directive) {
         if (__DEV__) {
+          // 判断指令名称，使其不使用内置指令做为自定义指令名称
           validateDirectiveName(name)
         }
 
         if (!directive) {
+          // 没有传递指令的话就将该指令从全局指令中获取返回
           return context.directives[name] as any
         }
+        // 判断是否存在
         if (__DEV__ && context.directives[name]) {
           warn(`Directive "${name}" has already been registered in target app.`)
         }
+        // 注册
         context.directives[name] = directive
         return app
       },
 
+      // 挂载
       mount(
         rootContainer: HostElement,
         isHydrate?: boolean,
-        namespace?: boolean | ElementNamespace,
+        isSVG?: boolean
       ): any {
+        // 判断是否挂载过
         if (!isMounted) {
           // #5571
+          // 判断当前的根容器是否已经有app实例，如果有则报错
           if (__DEV__ && (rootContainer as any).__vue_app__) {
             warn(
               `There is already an app instance mounted on the host container.\n` +
                 ` If you want to mount another app on the same host container,` +
-                ` you need to unmount the previous app by calling \`app.unmount()\` first.`,
+                ` you need to unmount the previous app by calling \`app.unmount()\` first.`
             )
           }
+
+          // 创建根节点的vnode，虚拟dom
           const vnode = createVNode(rootComponent, rootProps)
           // store app context on the root VNode.
           // this will be set on the root instance on initial mount.
+          // 将组件的上下文关系保存在属性 appContext 上
           vnode.appContext = context
-
-          if (namespace === true) {
-            namespace = 'svg'
-          } else if (namespace === false) {
-            namespace = undefined
-          }
 
           // HMR root reload
           if (__DEV__) {
+            // 当模块改变时，重新渲染
             context.reload = () => {
-              // casting to ElementNamespace because TS doesn't guarantee type narrowing
-              // over function boundaries
-              render(
-                cloneVNode(vnode),
-                rootContainer,
-                namespace as ElementNamespace,
-              )
+              render(cloneVNode(vnode), rootContainer, isSVG)
             }
           }
 
           if (isHydrate && hydrate) {
+            // ssr hydrate这里先不考虑
             hydrate(vnode as VNode<Node, Element>, rootContainer as any)
           } else {
-            render(vnode, rootContainer, namespace)
+            // 渲染
+            render(vnode, rootContainer, isSVG)
           }
+          // 标记挂载
           isMounted = true
           app._container = rootContainer
           // for devtools and telemetry
           ;(rootContainer as any).__vue_app__ = app
 
           if (__DEV__ || __FEATURE_PROD_DEVTOOLS__) {
+            // 在开发模式下或启用了开发工具的特性时，将根组件实例保存在 app._instance 上，然后初始化开发工具。
             app._instance = vnode.component
             devtoolsInitApp(app, version)
           }
 
+          // vnode.component!这里的!是 ts 中的非空断言符，即代表不是 null 或者 undefined
           return getExposeProxy(vnode.component!) || vnode.component!.proxy
         } else if (__DEV__) {
           warn(
             `App has already been mounted.\n` +
               `If you want to remount the same app, move your app creation logic ` +
               `into a factory function and create fresh app instances for each ` +
-              `mount - e.g. \`const createMyApp = () => createApp(App)\``,
+              `mount - e.g. \`const createMyApp = () => createApp(App)\``
           )
         }
       },
 
+      // 卸载
       unmount() {
         if (isMounted) {
           render(null, app._container)
@@ -379,11 +416,12 @@ export function createAppAPI<HostElement>(
         }
       },
 
+      // 注入
       provide(key, value) {
         if (__DEV__ && (key as string | symbol) in context.provides) {
           warn(
             `App already provides property with key "${String(key)}". ` +
-              `It will be overwritten with the new value.`,
+              `It will be overwritten with the new value.`
           )
         }
 
@@ -392,21 +430,23 @@ export function createAppAPI<HostElement>(
         return app
       },
 
+      // 使用 app 的上下文执行回调函数
       runWithContext(fn) {
-        const lastApp = currentApp
         currentApp = app
         try {
           return fn()
         } finally {
-          currentApp = lastApp
+          currentApp = null
         }
-      },
+      }
     })
 
+    // 是否使用@vue/compat构建迁移版本，方便vue2 迁移 vue3，不需要过多深究，如果有迁移需求可以阅读
     if (__COMPAT__) {
       installAppCompatProperties(app, context, render)
     }
 
+    // 返回app,构建流程完成
     return app
   }
 }

@@ -1,0 +1,27 @@
+<div id="root"></div>
+
+<script type="module">
+  import { h, ref, createApp } from '../../dist/vue.runtime.esm-bundler.js'
+
+  const count = ref(0)
+
+  const HelloWorld = {
+    name: 'HelloWorld',
+    render() {
+      return h(
+        'div',
+        { tId: 'hello-world' },
+        `hello world: count: ${count.value}`
+      )
+    }
+  }
+
+  const App = {
+    name: 'App',
+    render() {
+      return h('div', { tId: 1 }, [h('p', {}, '主页'), h(HelloWorld)])
+    }
+  }
+
+  createApp(App).mount(document.querySelector('#root'))
+</script>
