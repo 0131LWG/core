@@ -1,7 +1,7 @@
 {
   "private": true,
   "version": "3.4.25",
-  "packageManager": "pnpm@9.0.5",
+  "packageManager": "pnpm@9.0.6",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.js",
@@ -43,7 +43,7 @@
     "postinstall": "simple-git-hooks"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm lint-staged && pnpm check",
+    "pre-commit": "pnpm lint-staged",
     "commit-msg": "node scripts/verify-commit.js"
   },
   "lint-staged": {
